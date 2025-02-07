@@ -1,25 +1,59 @@
 use bwavfile::WaveReader;
 use chrono::{Timelike, Utc};
 use clap::Parser;
+use cpal::traits::{DeviceTrait, HostTrait};
+// use cpal::Device;
 use rodio::{Decoder, OutputStream, Sink};
+use serde::Serialize;
 use std::{thread, time};
 use std::fs::File;
 use std::io::BufReader;
+
+#[derive(
+    clap::ValueEnum, Clone, Debug, Serialize,
+)]
+#[serde(rename_all = "lowercase")]
+enum Speed {
+    Slow,
+    Normal,
+    Fast,
+    Turbo,
+}
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Wait js8call frame", long_about = None)]
 struct Opt {
     /// The WAV file to use
-    #[arg(short, long, default_value_t = String::from("none"))]
+    #[arg(short, long, default_value = "none")]
     file: String,
 
-//     /// The output device to use
-//     #[arg(short, long, default_value_t = String::from("Default"))]
-//     device: String,
+    /// The output device to use
+    #[arg(short, long, default_value = "default")]
+    device: String,
 
     /// Slowest js8speed in test. Determines time modulus.
-    #[arg(short, long, default_value_t = String::from("N"))]
-    speed: String,
+    #[arg(short, long, default_value = "normal")]
+    speed: Speed,
+}
+
+fn get_output_device(arg_device: String) -> cpal::Device {
+    let host = cpal::default_host();
+    if arg_device == "default" {
+        println!("Using default output device.");
+        host.default_output_device()
+    } else {
+        host.output_devices().unwrap()
+            .find(|x| x.name().map(|y| y == arg_device).unwrap_or(false))
+    }.expect("Failed to find output device.")
+}
+
+fn get_modulus(arg_speed: Speed) -> u64 {
+    match arg_speed {
+        Speed::Slow => 30,
+        Speed::Normal => 15,
+        Speed::Fast => 10,
+        Speed::Turbo => 6,
+    }
 }
 
 fn main() {
@@ -30,7 +64,12 @@ fn main() {
     const MILLIS_PER_SEC: u64 = 1000;
     const NANOS_PER_SEC: u64 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
 
-    let modulus_secs: u64 = 15;
+    let output_device = get_output_device(opt.device);
+    println!("Output device: {}", output_device.name().unwrap());
+
+    let modulus_secs: u64 = get_modulus(opt.speed);
+    println!("Modulus secs: {}", modulus_secs);
+
     let modulus_millis: u64 = modulus_secs * MILLIS_PER_SEC;
     let wav_offset_millis: u64 = {
         if &file_name != "none" {
@@ -49,7 +88,6 @@ fn main() {
             let time_ref_millis: u64 = (time_ref * MILLIS_PER_SEC)/sample_rate;
 
             time_ref_millis % modulus_millis
-
         } else {
             println!("No WAV file");
             0
@@ -97,7 +135,7 @@ fn main() {
 
         // Get an output stream handle to the default physical sound device.
         // Note that no sound will be played if _stream is dropped
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let (_stream, stream_handle) = OutputStream::try_from_device(&output_device).unwrap();
         let sink = Sink::try_new(&stream_handle).unwrap();
 
         // Load a sound from a file, using a path relative to Cargo.toml
