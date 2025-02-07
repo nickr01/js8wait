@@ -13,17 +13,13 @@ struct Opt {
     #[arg(short, long, default_value_t = String::from("none"))]
     file: String,
 
-    /// The output device to use
-    #[arg(short, long, default_value_t = String::from("Default"))]
-    device: String,
+//     /// The output device to use
+//     #[arg(short, long, default_value_t = String::from("Default"))]
+//     device: String,
 
     /// Slowest js8speed in test. Determines time modulus.
     #[arg(short, long, default_value_t = String::from("N"))]
     speed: String,
-
-    /// Adjustment time offset in milliseconds. Negative is less sleep.
-    #[arg(short, long, default_value_t = 0)]
-    adjust: i16,
 }
 
 fn main() {
