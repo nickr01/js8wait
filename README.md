@@ -8,10 +8,10 @@ Default would be 15sec, no offset.
 
 Intended params:
 
-JS8 frame modulus as per speeds: 30, 15,
+JS8 frame modulus calc from speeds: /S:30 /N:15 /F:? /T:?
 
 Manual Offset in +-0.1 secs
 
 Auto offset calc from timestamp in BWF header of an arbitrary WAV file. Default 0 if no file.
 
-Manual and Auto offsets are additive.
+Manual and Auto offsets are additive to allow compensation for example for start delay in command line player that might follow.
