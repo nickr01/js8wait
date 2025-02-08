@@ -12,7 +12,7 @@ Lead time in a recording is automatically calculated from the source origation t
 
 Default lead time is 0 if no file is supplied.
 
-### Worflow
+### Workflow
 
 Produce a WAV file from recording software eg Audacity or Reaper which directly record a WAV files. Reaper saves raw recorded tracks in a Media directory and they are perfect to feed to js8wait as they have the origination time embedded, using these files is very reliable.
 
