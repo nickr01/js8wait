@@ -8,11 +8,11 @@ Audio format other than WAV is discouraged because of potential to introduce con
 
 JS8 frame modulus or boundary is calculated from specified speeds: slow: 30 normal: 15 fast:10 turbo:6.
 
-Lead time in a recording is automatically calculated from the source origation time in BWF header of the WAV file. js8wait attempts to recreate the same realtime frame offset on playback.
+If required, the pre-roll time in a recording is automatically calculated from the source origation time in BWF header of the WAV file. js8wait attempts to recreate the same realtime frame offset on playback.
 
-Default lead time is 0 if no file is supplied.
+Default pre-roll time is 0 if no file is supplied.
 
-js8wait combines the lead time with realtime offset from wall clock frame boundary to then delays the play start to the correct time.
+js8wait combines the pre-roll time with realtime offset from wall clock frame boundary to calculate delay needed to start playing with signal preserving its alignment to js8 frames.
 
 ### Workflow
 
@@ -20,9 +20,9 @@ Produce a WAV file from recording software eg Audacity or Reaper which directly 
 
 TODO ** check a workflow for Audacity.
 
-If the WAV file is being produced as the result of a DAW editing process then the origination_time is set to that of the start of the render process and this will be misleading.
+On the other hand if the WAV file is being produced via a DAW editing process then the origination_time is set to that of the start of the render process and this will be misleading.
 
-The workaround is to slide the test signal to the right to align it frames with js8 frames, and to start the render range  at any point other than 0. Time_reference will now be set to the correct offset, and being non-zero will take priority in determining the lead in time calculation. Tested with Reaper. TODO ** test with Audacity
+The workaround is make sure the test signal content is aligned with js8 frames in DAW time, and then a render range must be set that starts at any point other than time 0. Time_reference will now be set to a correct offset, and being non-zero will take priority in determining the pre-roll time in time calculation. Tested with Reaper. TODO ** test with Audacity
 
 
 ```
