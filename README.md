@@ -8,9 +8,17 @@ Audio format other than WAV is discouraged because of potential to introduce con
 
 JS8 frame modulus or boundary is calculated from specified speeds: slow: 30 normal: 15 fast:10 turbo:6.
 
-Lead time in a recording is automatically calculated from the source origation time in BWF header of the WAV file. js8wait attempts to recreate the same realtime frame offset on playback. If the WAV file is produced by an editing process then this offset will usually be 0, and the edit process should be used to trim the audio file to be consistent with this with it's content start aligned with the js8 frame boundary.
+Lead time in a recording is automatically calculated from the source origation time in BWF header of the WAV file. js8wait attempts to recreate the same realtime frame offset on playback.
 
 Default lead time is 0 if no file is supplied.
+
+### Worflow
+
+Produce a WAV file from recording software eg Audacity or Reaper which directly record a WAV files. Reaper saves raw recorded tracks in a Media directory and they are perfect to feed to js8wait as they have the origination time embedded, using these files is very reliable.
+
+TODO ** check a workflow for Audacity.
+
+TODO ** check a workflow if the WAV file is produced as the result of an editing process. Ideally would trim so starts on a js8 frame boundary, with embedded origin time of 00:00:00 but need to check that the DAWs are not putting the render start time in that field.
 
 Combined with calculation of current offset from wall clock frame boundary.
 
