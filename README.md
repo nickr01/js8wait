@@ -12,15 +12,18 @@ Lead time in a recording is automatically calculated from the source origation t
 
 Default lead time is 0 if no file is supplied.
 
+js8wait combines the lead time with realtime offset from wall clock frame boundary to then delays the play start to the correct time.
+
 ### Workflow
 
 Produce a WAV file from recording software eg Audacity or Reaper which directly record a WAV files. Reaper saves raw recorded tracks in a Media directory and they are perfect to feed to js8wait as they have the origination time embedded, using these files is very reliable.
 
 TODO ** check a workflow for Audacity.
 
-TODO ** check a workflow if the WAV file is produced as the result of an editing process. Ideally would trim so starts on a js8 frame boundary, with embedded origin time of 00:00:00 but need to check that the DAWs are not putting the render start time in that field.
+If the WAV file is being produced as the result of a DAW editing process then the origination_time is set to that of the start of the render process and this will be misleading.
 
-Combined with calculation of current offset from wall clock frame boundary.
+The workaround is to slide the test signal to the right to align it frames with js8 frames, and to start the render range  at any point other than 0. Time_reference will now be set to the correct offset, and being non-zero will take priority in determining the lead in time calculation. Tested with Reaper. TODO ** test with Audacity
+
 
 ```
 Usage: js8wait [OPTIONS]
