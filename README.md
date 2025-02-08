@@ -8,7 +8,7 @@ Audio format other than WAV is discouraged because of potential to introduce con
 
 JS8 frame modulus or boundary is calculated from specified speeds: slow: 30 normal: 15 fast:10 turbo:6.
 
-Lead time in a recording is automatically calculated from the reference time (samples since midnight) in BWF header of the WAV file. js8wait attempts to recreate the same realtime frame offset on playback. If the WAV file is produced by an editing process then this offset will usually be 0, and the edit process should be used to trim the audio file to be consistent with this with it's content start aligned with the js8 frame boundary.
+Lead time in a recording is automatically calculated from the source origation time in BWF header of the WAV file. js8wait attempts to recreate the same realtime frame offset on playback. If the WAV file is produced by an editing process then this offset will usually be 0, and the edit process should be used to trim the audio file to be consistent with this with it's content start aligned with the js8 frame boundary.
 
 Default lead time is 0 if no file is supplied.
 
