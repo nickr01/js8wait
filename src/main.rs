@@ -2,7 +2,6 @@ use bwavfile::WaveReader;
 use chrono::{Timelike, Utc};
 use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait};
-// use cpal::Device;
 use rodio::{Decoder, OutputStream, Sink};
 use serde::Serialize;
 use std::{thread, time};
@@ -75,18 +74,27 @@ fn main() {
         if &file_name != "none" {
             println!("Parsing {}", &file_name);
             let mut wavr = WaveReader::open(&file_name).unwrap();
-            let format = wavr.format().unwrap();
+//            let format = wavr.format().unwrap();
 
-            assert_eq!(format.sample_rate, 44100);
-        //    assert_eq!(format.channel_count, 1);
+//    assert_eq!(format.sample_rate, 44100);
+//    assert_eq!(format.channel_count, 1);
 
-            let sample_rate: u64 = format.sample_rate.into();
+//            let sample_rate: u64 = format.sample_rate.into();
 
             let bext = wavr.broadcast_extension();
-            let time_ref: u64 = bext.unwrap().unwrap().time_reference;
 
-            let time_ref_millis: u64 = (time_ref * MILLIS_PER_SEC)/sample_rate;
+//   Maybe should use time_ref if non-zero ??
+//           let time_ref: u64 = bext.unwrap().unwrap().time_reference;
+//            let time_ref_millis: u64 = (time_ref * MILLIS_PER_SEC)/sample_rate;
 
+            // Creation time in format `HH:MM:SS`.
+            let origination_time = bext.unwrap().unwrap().origination_time;
+            let origination_secs  = &origination_time[6..8];
+            println!("Origination secs {}", origination_secs);
+
+            let origination_secs: u64 = origination_secs.parse().expect("Cannot parse secs");
+
+            let time_ref_millis: u64 = origination_secs * MILLIS_PER_SEC;
             time_ref_millis % modulus_millis
         } else {
             println!("No WAV file");
