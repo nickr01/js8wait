@@ -21,7 +21,7 @@ build:
 
 # Develop the app.
 run: build
-    ./target/debug/js8wait -f ./tests/media/sample_441K_mono_fp_32.wav
+    ./target/debug/js8wait -f ./tests/media/min_snr_1.1.wav
 
 # Format the codebase.
 fmt:

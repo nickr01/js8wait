@@ -77,8 +77,10 @@ fn main() {
             let mut wavr = WaveReader::open(&file_name).unwrap();
             let format = wavr.format().unwrap();
 
-//    assert_eq!(format.sample_rate, 44100);
-//    assert_eq!(format.channel_count, 1);
+            // force use of files which match js8 native input format - reduce transcode artefact
+            assert_eq!(format.sample_rate, 48000);
+            assert_eq!(format.channel_count, 1);
+            assert_eq!(format.bits_per_sample, 16);
 
             let sample_rate = format.sample_rate;
 
