@@ -46,7 +46,7 @@ fn get_output_device(arg_device: String) -> cpal::Device {
     }.expect("Failed to find output device.")
 }
 
-fn get_modulus(arg_speed: Speed) -> u64 {
+fn get_modulus(arg_speed: Speed) -> u32 {
     match arg_speed {
         Speed::Slow => 30,
         Speed::Normal => 15,
@@ -59,18 +59,19 @@ fn main() {
     let opt = Opt::parse();
     let file_name = opt.file;
 
-    const NANOS_PER_MILLIS: u64 = 1000 * 1000;
-    const MILLIS_PER_SEC: u64 = 1000;
-    const NANOS_PER_SEC: u64 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
+    const NANOS_PER_MILLIS: u32 = 1000 * 1000;
+    const MILLIS_PER_SEC: u32 = 1000;
+    const NANOS_PER_SEC: u32 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
 
     let output_device = get_output_device(opt.device);
     println!("Output device: {}", output_device.name().unwrap());
 
-    let modulus_secs: u64 = get_modulus(opt.speed);
+    let modulus_secs = get_modulus(opt.speed);
     println!("Modulus secs: {}", modulus_secs);
 
-    let modulus_millis: u64 = modulus_secs * MILLIS_PER_SEC;
-    let wav_offset_millis: u64 = {
+    let modulus_millis = modulus_secs * MILLIS_PER_SEC;
+
+    let wav_offset_millis = {
         if &file_name != "none" {
             println!("Parsing {}", &file_name);
             let mut wavr = WaveReader::open(&file_name).unwrap();
@@ -79,17 +80,17 @@ fn main() {
 //    assert_eq!(format.sample_rate, 44100);
 //    assert_eq!(format.channel_count, 1);
 
-            let sample_rate: u64 = format.sample_rate.into();
+            let sample_rate = format.sample_rate;
 
             let bext = wavr.broadcast_extension().unwrap();
 
-            let time_ref: u64 = bext.as_ref().unwrap().time_reference;
+            let time_ref = bext.as_ref().unwrap().time_reference; // u64
             println!{"bext.time_reference {}", time_ref};
             // to be used if non-zero - it provides a way for DAW workflow to set offset
             // DAW should be rendered from a non-zero frame boundary
             // origination_time will then be ignored
 
-            let time_ref_millis: u64 = (time_ref * MILLIS_PER_SEC)/sample_rate;
+            let time_ref_millis: u32 = ((time_ref as u32) * MILLIS_PER_SEC)/sample_rate;
 
             // Creation time in format `HH:MM:SS`.
             let origination_time = bext.unwrap().origination_time;
@@ -98,8 +99,8 @@ fn main() {
             let origination_secs  = &origination_time[6..8];
             println!("Origination secs {}", origination_secs);
 
-            let origination_secs: u64 = origination_secs.parse().expect("Cannot parse secs");
-            let orig_ref_millis: u64 = origination_secs * MILLIS_PER_SEC;
+            let origination_secs: u32 = origination_secs.parse().expect("Cannot parse secs");
+            let orig_ref_millis = origination_secs * MILLIS_PER_SEC;
 
             let offset = if time_ref_millis > 0 {
                 println!("using bext.time_ref");
@@ -108,7 +109,7 @@ fn main() {
                 println!("using bext.orig_time");
                 orig_ref_millis
             };
-            offset % modulus_millis
+            offset % (modulus_millis as u32)
         } else {
             println!("No WAV file");
             0
@@ -121,23 +122,23 @@ fn main() {
     );
 
     let now = Utc::now();
-    let now_sec: u64 = now.second().into();
+    let now_sec = now.second();
     let now_nanos_part: u64 = now.nanosecond().into();
 
-    let now_nanos: u64 = now_sec * NANOS_PER_SEC + now_nanos_part;
+    let now_nanos: u64 = ((now_sec as u64) * (NANOS_PER_SEC as u64)) + now_nanos_part;
 
     println!(
         "Now nanos is {} ",
         now_nanos
     );
 
-    let now_offset_millis = (now_nanos/NANOS_PER_MILLIS) % modulus_millis;
+    let now_offset_millis = ((now_nanos/(NANOS_PER_MILLIS as u64)) as u32) % modulus_millis;
     println!(
         "Now offset is {} milliseconds",
         now_offset_millis
     );
 
-    let sleep_millis: u64
+    let sleep_millis
         = (modulus_millis + wav_offset_millis - now_offset_millis) % modulus_millis;
 
     println!(
