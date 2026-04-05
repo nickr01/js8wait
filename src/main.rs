@@ -41,7 +41,7 @@ fn get_output_device(arg_device: String) -> cpal::Device {
         println!("Using default output device.");
         host.default_output_device()
     } else {
-        host.output_devices().unwrap()
+        host.output_devices().expect("Cannot list output devices")
             .find(|x| x.name().map(|y| y == arg_device).unwrap_or(false))
     }.expect("Failed to find output device.")
 }
@@ -64,7 +64,7 @@ fn main() {
     const NANOS_PER_SEC: u32 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
 
     let output_device = get_output_device(opt.device);
-    println!("Output device: {}", output_device.name().unwrap());
+    println!("Output device: {}", output_device.name().expect("Cannot get output device"));
 
     let modulus_secs = get_modulus(opt.speed);
     println!("Modulus secs: {}", modulus_secs);
@@ -74,8 +74,8 @@ fn main() {
     let wav_offset_millis = {
         if &file_name != "none" {
             println!("Parsing {}", &file_name);
-            let mut wavr = WaveReader::open(&file_name).unwrap();
-            let format = wavr.format().unwrap();
+            let mut wavr = WaveReader::open(&file_name).expect("Cannot build WaveReader");
+            let format = wavr.format().expect("Cannot get WaveReader format");
 
             // force use of files which match js8 native input format - reduce transcode artefact
             assert_eq!(format.sample_rate, 48000);
@@ -84,9 +84,9 @@ fn main() {
 
             let sample_rate = format.sample_rate;
 
-            let bext = wavr.broadcast_extension().unwrap();
+            let bext = wavr.broadcast_extension().expect("Cannot read broadcast extension");
 
-            let time_ref = bext.as_ref().unwrap().time_reference; // u64
+            let time_ref = bext.as_ref().expect("Cannot read time reference").time_reference; // u64
             println!{"bext.time_reference {}", time_ref};
             // to be used if non-zero - it provides a way for DAW workflow to set offset
             // DAW should be rendered from a non-zero frame boundary
@@ -95,7 +95,7 @@ fn main() {
             let time_ref_millis: u32 = ((time_ref as u32) * MILLIS_PER_SEC)/sample_rate;
 
             // Creation time in format `HH:MM:SS`.
-            let origination_time = bext.unwrap().origination_time;
+            let origination_time = bext.expect("Cannot read origination time").origination_time;
             println!{"bext.origination_time {}", origination_time};
 
             let origination_secs  = &origination_time[6..8];
@@ -159,14 +159,14 @@ fn main() {
 
         // Get an output stream handle to the default physical sound device.
         // Note that no sound will be played if _stream is dropped
-        let (_stream, stream_handle) = OutputStream::try_from_device(&output_device).unwrap();
-        let sink = Sink::try_new(&stream_handle).unwrap();
+        let (_stream, stream_handle) = OutputStream::try_from_device(&output_device).expect("Cannot get output stream_handle");
+        let sink = Sink::try_new(&stream_handle).expect("Cannot create sink");
 
         // Load a sound from a file, using a path relative to Cargo.toml
-        let file = BufReader::new(File::open(&file_name).unwrap());
+        let file = BufReader::new(File::open(&file_name).expect("Cannot open file"));
 
         // Decode that sound file into a source
-        let source = Decoder::new(file).unwrap();
+        let source = Decoder::new(file).expect("Cannot create decoder");
         sink.append(source);
 
         sink.sleep_until_end();
