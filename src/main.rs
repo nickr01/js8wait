@@ -1,15 +1,23 @@
-use bwavfile::WaveReader;
-use chrono::{Timelike, Utc};
+// src/main.rs
+
+// change hound -> cpal
+
+// needed for traits
+use chrono::Timelike;
 use clap::Parser;
-use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{Decoder, OutputStream, Sink};
-use serde::Serialize;
-use std::{thread, time};
-use std::fs::File;
-use std::io::BufReader;
+use cpal::*;
+use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
+
+const CHANNELS: u16 = 2;
+const TARGET_SAMPLE_RATE: u32 = 48000;
+const TARGET_SAMPLE_FORMAT: cpal::SampleFormat = cpal::SampleFormat::F32;
+
+const NANOS_PER_MILLIS: u32 = 1000 * 1000;
+const MILLIS_PER_SEC: u32 = 1000;
+const NANOS_PER_SEC: u32 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
 
 #[derive(
-    clap::ValueEnum, Clone, Debug, Serialize,
+    clap::ValueEnum, Clone, Debug, serde::Serialize,
 )]
 #[serde(rename_all = "lowercase")]
 enum Speed {
@@ -19,52 +27,55 @@ enum Speed {
     Turbo,
 }
 
-#[derive(Parser, Debug)]
+#[derive(clap::Parser, Debug)]
 #[command(version, about = "Wait js8call frame", long_about = None)]
 struct Opt {
-    /// The WAV file to use
+    /// The WAV file to use - can be none to allow just to wait for time modulus
     #[arg(short, long, default_value = "none")]
-    file: String,
+    input_file: Option<String>,
 
-    /// The output device to use
+    /// The out out_device to use- can be none to allow just to wait for time modulus
     #[arg(short, long, default_value = "default")]
-    device: String,
+    out_device: Option<String>,
 
     /// Slowest js8speed in test. Determines time modulus.
     #[arg(short, long, default_value = "normal")]
     speed: Speed,
 }
 
-fn get_output_device(arg_device: String) -> cpal::Device {
-    let host = cpal::default_host();
-    if arg_device == "default" {
-        println!("Using default output device.");
-        host.default_output_device()
-    } else {
-        host.output_devices().expect("Cannot list output devices")
-            .find(|x| x.name().map(|y| y == arg_device).unwrap_or(false))
-    }.expect("Failed to find output device.")
-}
-
-fn get_modulus(arg_speed: Speed) -> u32 {
-    match arg_speed {
-        Speed::Slow => 30,
-        Speed::Normal => 15,
-        Speed::Fast => 10,
-        Speed::Turbo => 6,
-    }
-}
-
 fn main() {
     let opt = Opt::parse();
-    let file_name = opt.file;
+    // let mut signal: Vec<f32> = Vec::new();
 
-    const NANOS_PER_MILLIS: u32 = 1000 * 1000;
-    const MILLIS_PER_SEC: u32 = 1000;
-    const NANOS_PER_SEC: u32 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
+    // 1 Establish the out device and it's required format
+    let host = cpal::default_host();
 
-    let output_device = get_output_device(opt.device);
-    println!("Output device: {}", output_device.name().expect("Cannot get output device"));
+    let out_device = if let Some(out_device) = opt.out_device {
+        if out_device != "default" {
+            let id = &out_device.parse().expect("failed to parse out_device id");
+            host.device_by_id(id)
+        } else {
+            // should fix to return a None
+            host.default_output_device()
+        }
+    } else {
+        host.default_output_device()
+    }
+    .expect("failed to establish out_device");
+    println!("Output_device: {}", out_device.id().unwrap());
+
+
+    let out_config = out_device.default_output_config().unwrap();
+    println!("Default out config: {out_config:?}");
+
+    let out_spec = wav_spec_from_config(&out_config);
+
+    // 2 Read the input file and establish the modulus
+    let mut input_wav = if let Some(input_file) = opt.input_file {
+        hound::WavReader::open(input_file).unwrap()
+    } else {
+        hound::WavReader::open("test.wav").unwrap()
+    };
 
     let modulus_secs = get_modulus(opt.speed);
     println!("Modulus secs: {}", modulus_secs);
@@ -72,58 +83,60 @@ fn main() {
     let modulus_millis = modulus_secs * MILLIS_PER_SEC;
 
     let wav_offset_millis = {
-        if &file_name != "none" {
-            println!("Parsing {}", &file_name);
-            let mut wavr = WaveReader::open(&file_name).expect("Cannot build WaveReader");
-            let format = wavr.format().expect("Cannot get WaveReader format");
+        // if &input_file != "none" {
+        // println!("Parsing {}", &file_name);
+        // let mut wavr = WaveReader::open(&file_name).expect("Cannot build WaveReader");
+        // let format = wavr.format().expect("Cannot get WaveReader format");
 
-            // force use of files which match js8 native input format - reduce transcode artefact
-            assert_eq!(format.sample_rate, 48000);
-            assert_eq!(format.channel_count, 1);
-            assert_eq!(format.bits_per_sample, 16);
+        // // force use of files which match js8 native input format - reduce transcode artefact
+        // // assert_eq!(format.sample_rate, 48000);
+        // // assert_eq!(format.channel_count, 1);
+        // // assert_eq!(format.bits_per_sample, 16);
 
-            let sample_rate = format.sample_rate;
+        // let sample_rate = format.sample_rate;
 
-            let bext = wavr.broadcast_extension().expect("Cannot read broadcast extension");
+        // let bext = wavr.broadcast_extension().expect("Cannot read broadcast extension");
 
-            let time_ref = bext.as_ref().expect("Cannot read time reference").time_reference; // u64
-            println!{"bext.time_reference {}", time_ref};
-            // to be used if non-zero - it provides a way for DAW workflow to set offset
-            // DAW should be rendered from a non-zero frame boundary
-            // origination_time will then be ignored
+        // // let time_ref = bext.as_ref().expect("Cannot read time reference").time_reference; // u64
+        // let time_ref: u32 = 0;
+        // println!{"bext.time_reference {}", time_ref};
+        // // to be used if non-zero - it provides a way for DAW workflow to set offset
+        // // DAW should be rendered from a non-zero frame boundary
+        // // origination_time will then be ignored
 
-            let time_ref_millis: u32 = ((time_ref as u32) * MILLIS_PER_SEC)/sample_rate;
+        // let time_ref_millis: u32 = ((time_ref as u32) * MILLIS_PER_SEC)/sample_rate;
 
-            // Creation time in format `HH:MM:SS`.
-            let origination_time = bext.expect("Cannot read origination time").origination_time;
-            println!{"bext.origination_time {}", origination_time};
+        // // Creation time in format `HH:MM:SS`.
+        // let origination_time = bext.expect("Cannot read origination time").origination_time;
+        // println!{"bext.origination_time {}", origination_time};
 
-            let origination_secs  = &origination_time[6..8];
-            println!("Origination secs {}", origination_secs);
+        // let origination_secs  = &origination_time[6..8];
+        // println!("Origination secs {}", origination_secs);
 
-            let origination_secs: u32 = origination_secs.parse().expect("Cannot parse secs");
-            let orig_ref_millis = origination_secs * MILLIS_PER_SEC;
+        // let origination_secs: u32 = origination_secs.parse().expect("Cannot parse secs");
+        // let orig_ref_millis = origination_secs * MILLIS_PER_SEC;
 
-            let offset = if time_ref_millis > 0 {
-                println!("using bext.time_ref");
-                time_ref_millis
-            } else {
-                println!("using bext.orig_time");
-                orig_ref_millis
-            };
-            offset % (modulus_millis as u32)
-        } else {
-            println!("No WAV file");
+        // let offset = if time_ref_millis > 0 {
+        //     println!("using bext.time_ref");
+        //     time_ref_millis
+        // } else {
+        //     println!("using bext.orig_time");
+        //     orig_ref_millis
+        // };
+        //     let offset = 0;
+        //     offset % (modulus_millis as u32)
+        // } else {
+        //     println!("No WAV file");
             0
-        }
     };
 
+    // 3 Sleep
     println!(
         "Wave offset is {} milliseconds",
         wav_offset_millis
     );
 
-    let now = Utc::now();
+    let now = chrono::Utc::now();
     let now_sec = now.second();
     let now_nanos_part: u64 = now.nanosecond().into();
 
@@ -148,28 +161,126 @@ fn main() {
         sleep_millis
     );
 
-    if sleep_millis > 0 {
-        let sleep_duration = time::Duration::from_millis(sleep_millis.into());
-        thread::sleep(sleep_duration);
+    if false && sleep_millis > 0 {
+        let sleep_duration = std::time::Duration::from_millis(sleep_millis.into());
+        std::thread::sleep(sleep_duration);
     };
 
-    if &file_name != "none" {
-        // see if we can play it!
-        println!("Playing {}", &file_name);
-
-        // Get an output stream handle to the default physical sound device.
-        // Note that no sound will be played if _stream is dropped
-        let (_stream, stream_handle) = OutputStream::try_from_device(&output_device).expect("Cannot get output stream_handle");
-        let sink = Sink::try_new(&stream_handle).expect("Cannot create sink");
-
-        // Load a sound from a file, using a path relative to Cargo.toml
-        let file = BufReader::new(File::open(&file_name).expect("Cannot open file"));
-
-        // Decode that sound file into a source
-        let source = Decoder::new(file).expect("Cannot create decoder");
-        sink.append(source);
-
-        sink.sleep_until_end();
-    }
+    // 4 Play
+    match out_config.sample_format() {
+        // cpal::SampleFormat::I8 => run::<i8>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I16 => run::<i16>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I24 => run::<I24>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I32 => run::<i32>(input_wav, &out_device, out_config.into()),
+        // // cpal::SampleFormat::I48 => run::<I48>(input_wav, &out_device, config.into()),
+        // cpal::SampleFormat::I64 => run::<i64>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U8 => run::<u8>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U16 => run::<u16>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U24 => run::<U24>(input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U32 => run::<u32>(input_wav, &out_device, out_config.into()),
+        // // cpal::SampleFormat::U48 => run::<U48>(input_wav, &out_device, config.into()),
+        // cpal::SampleFormat::U64 => run::<u64>(input_wav, &out_device, out_config.into()),
+        cpal::SampleFormat::F32 => run::<f32>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::F64 => run::<f64>(input_wav, &out_device, out_config.into()),
+        sample_format => panic!("Unsupported sample format '{sample_format}'"),
+    }.unwrap();
+    
     println!("Done");
+}
+
+fn wav_sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
+    if format.is_float() {
+        hound::SampleFormat::Float
+    } else {
+        hound::SampleFormat::Int
+    }
+}
+
+fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> hound::WavSpec {
+    hound::WavSpec {
+        channels: config.channels() as _,
+        sample_rate: config.sample_rate() as _,
+        bits_per_sample: (config.sample_format().sample_size() * 8) as _,
+        sample_format: wav_sample_format(config.sample_format()),
+    }
+}
+
+fn convert_sample_rate(data: &Vec<f32>, input_sample_rate: u32, out_sample_rate: u32, channels: u16) -> Vec<f32> {
+    samplerate::convert(
+        input_sample_rate as _,
+        out_sample_rate as _,
+        channels as _,
+        samplerate::ConverterType::SincBestQuality,
+        data,
+    )
+    .unwrap_or_default()
+}
+
+fn get_modulus(arg_speed: Speed) -> u32 {
+    match arg_speed {
+        Speed::Slow => 30,
+        Speed::Normal => 15,
+        Speed::Fast => 10,
+        Speed::Turbo => 6,
+    }
+}
+
+pub fn run<T>(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::File>>, device: &cpal::Device, out_config: cpal::StreamConfig) -> Result<(), anyhow::Error>
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    let input_spec = input_wav.spec();
+    println!("in_spec: {:?}", input_spec);
+
+    // convert sample format to f32 before rate convert
+    let mut input_wav_f32: Vec<f32> = Vec::new();
+    for sample in input_wav.samples::<i16>() {
+        input_wav_f32.push(f32::from_sample::<i16>(sample.unwrap()));
+    }
+    let mut input_wav_f32_resampled = convert_sample_rate(
+        &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 1
+    );
+    let mut in_samples = input_wav_f32_resampled.into_iter();
+
+    let in_sample_count = in_samples.len();
+    println!("in_sample_count: {:?}", in_sample_count);
+
+    let out_sample_rate = out_config.sample_rate as f32;
+
+    let out_channels = out_config.channels as usize;
+
+    let out_data_fn = move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+        let mut input_fell_behind = false;
+        for frame in data.chunks_mut(2) {
+            let signal_value = match in_samples.next() {
+                Some(s) => s,
+                None => {
+                    input_fell_behind = true;
+                    0.0
+                }
+            };
+            // this was sample format conversion step
+            // let out_value = f32::from_sample::<T>(signal_value);
+            for sample in frame.iter_mut() {
+                *sample = signal_value.to_sample::<T>();
+            }
+        }
+        if input_fell_behind {
+            eprintln!("input stream fell behind");
+        }
+    };
+
+    let err_fn = |err| eprintln!("an error occurred on stream: {err}");
+
+    let stream = device.build_output_stream(
+        &out_config,
+        out_data_fn,
+        err_fn,
+        None,
+    )?;
+    stream.play()?;
+
+    std::thread::sleep(std::time::Duration::from_millis(1000 * (in_sample_count as f32/out_sample_rate) as u64));
+
+    Ok(())
 }
