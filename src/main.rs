@@ -8,10 +8,6 @@ use clap::Parser;
 use cpal::*;
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 
-const CHANNELS: u16 = 2;
-const TARGET_SAMPLE_RATE: u32 = 48000;
-const TARGET_SAMPLE_FORMAT: cpal::SampleFormat = cpal::SampleFormat::F32;
-
 const NANOS_PER_MILLIS: u32 = 1000 * 1000;
 const MILLIS_PER_SEC: u32 = 1000;
 const NANOS_PER_SEC: u32 = MILLIS_PER_SEC * NANOS_PER_MILLIS;
@@ -271,7 +267,8 @@ fn convert_from(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::Fil
 
     // sample rate convert
     let input_wav_f32_resampled = convert_sample_rate(
-        &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 1
+        &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 
+        input_spec.channels
     );
 
     // channel convert
@@ -282,35 +279,20 @@ fn convert_from(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::Fil
     )
 }
 
-fn run<T>(input_wav_f32_resampled: Vec<f32>, device: &cpal::Device, out_config: cpal::StreamConfig) -> Result<(), anyhow::Error>
+fn run<T>(out_samples: Vec<f32>, device: &cpal::Device, out_config: cpal::StreamConfig) -> Result<(), anyhow::Error>
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {
-    // let input_spec = input_wav.spec();
-    // println!("in_spec: {:?}", input_spec);
-
-    // let input_wav_f32_resampled = convert_from(input_wav, &out_config);
-
-    // let input_wav_f32_resampled = convert_sample_rate(
-    //     &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 1
-    // );
-
-    // let  input_wav_f32_resampled = convert_channels(
-    //     & input_wav_f32_resampled, 
-    //     input_spec.channels as usize, 
-    //     out_config.channels as usize
-    // );
-
-    let mut in_samples = input_wav_f32_resampled.into_iter();
-    let in_sample_count = in_samples.len();
-    println!("in_sample_count: {:?}", in_sample_count);
+    let mut out_sample_iter = out_samples.into_iter();
+    let out_sample_count = out_sample_iter.len();
+    println!("Out_sample_count: {:?}", out_sample_count);
 
     let out_sample_rate = out_config.sample_rate as f32;
 
     let out_data_fn = move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
         let mut input_fell_behind = false;
         for frame in data.chunks_mut(out_config.channels as usize) {
-            let signal_value = match in_samples.next() {
+            let signal_value = match out_sample_iter.next() {
                 Some(s) => s,
                 None => {
                     input_fell_behind = true;
@@ -338,7 +320,9 @@ where
     )?;
     stream.play()?;
 
-    std::thread::sleep(std::time::Duration::from_millis(1000 * (in_sample_count as f32/out_sample_rate) as u64));
+    let play_time:f32 = out_sample_count as f32/(out_sample_rate * out_config.channels as f32) * 2.0; // TEMP FUDGE as output is half speed
+    println!("Duration {} secs", play_time);
+    std::thread::sleep(std::time::Duration::from_millis(1000 * play_time as u64));
 
     Ok(())
 }
