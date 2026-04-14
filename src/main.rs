@@ -77,6 +77,8 @@ fn main() {
         hound::WavReader::open("test.wav").unwrap()
     };
 
+    let out_samples = convert_from(&mut input_wav, &out_config.clone().into());
+
     let modulus_secs = get_modulus(opt.speed);
     println!("Modulus secs: {}", modulus_secs);
 
@@ -168,20 +170,20 @@ fn main() {
 
     // 4 Play
     match out_config.sample_format() {
-        cpal::SampleFormat::I8 => run::<i8>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::I16 => run::<i16>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::I24 => run::<I24>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::I32 => run::<i32>(&mut input_wav, &out_device, out_config.into()),
-        // cpal::SampleFormat::I48 => run::<I48>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::I64 => run::<i64>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::U8 => run::<u8>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::U16 => run::<u16>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::U24 => run::<U24>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::U32 => run::<u32>(&mut input_wav, &out_device, out_config.into()),
-        // cpal::SampleFormat::U48 => run::<U48>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::U64 => run::<u64>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::F32 => run::<f32>(&mut input_wav, &out_device, out_config.into()),
-        cpal::SampleFormat::F64 => run::<f64>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I8 => run::<i8>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I16 => run::<i16>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I24 => run::<I24>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I32 => run::<i32>(&mut input_wav, &out_device, out_config.into()),
+        // // cpal::SampleFormat::I48 => run::<I48>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::I64 => run::<i64>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U8 => run::<u8>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U16 => run::<u16>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U24 => run::<U24>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U32 => run::<u32>(&mut input_wav, &out_device, out_config.into()),
+        // // cpal::SampleFormat::U48 => run::<U48>(&mut input_wav, &out_device, out_config.into()),
+        // cpal::SampleFormat::U64 => run::<u64>(&mut input_wav, &out_device, out_config.into()),
+        cpal::SampleFormat::F32 => run::<f32>(out_samples, &out_device, out_config.into()),
+        // cpal::SampleFormat::F64 => run::<f64>(&mut input_wav, &out_device, out_config.into()),
         sample_format => panic!("Unsupported sample format '{sample_format}'"),
     }.unwrap();
     
@@ -256,9 +258,7 @@ fn get_modulus(arg_speed: Speed) -> u32 {
     }
 }
 
-pub fn run<T>(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::File>>, device: &cpal::Device, out_config: cpal::StreamConfig) -> Result<(), anyhow::Error>
-where
-    T: cpal::SizedSample + cpal::FromSample<f32>,
+fn convert_from(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::File>>, out_config: &cpal::StreamConfig) -> Vec<f32> 
 {
     let input_spec = input_wav.spec();
     println!("in_spec: {:?}", input_spec);
@@ -268,15 +268,38 @@ where
     for sample in input_wav.samples::<i16>() {
         input_wav_f32.push(f32::from_sample::<i16>(sample.unwrap()));
     }
+
+    // sample rate convert
     let input_wav_f32_resampled = convert_sample_rate(
         &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 1
     );
 
-    let  input_wav_f32_resampled = convert_channels(
+    // channel convert
+    convert_channels(
         & input_wav_f32_resampled, 
         input_spec.channels as usize, 
         out_config.channels as usize
-    );
+    )
+}
+
+fn run<T>(input_wav_f32_resampled: Vec<f32>, device: &cpal::Device, out_config: cpal::StreamConfig) -> Result<(), anyhow::Error>
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    // let input_spec = input_wav.spec();
+    // println!("in_spec: {:?}", input_spec);
+
+    // let input_wav_f32_resampled = convert_from(input_wav, &out_config);
+
+    // let input_wav_f32_resampled = convert_sample_rate(
+    //     &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 1
+    // );
+
+    // let  input_wav_f32_resampled = convert_channels(
+    //     & input_wav_f32_resampled, 
+    //     input_spec.channels as usize, 
+    //     out_config.channels as usize
+    // );
 
     let mut in_samples = input_wav_f32_resampled.into_iter();
     let in_sample_count = in_samples.len();
