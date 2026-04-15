@@ -278,7 +278,8 @@ fn samples_from_wav(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs:
             // f -> f32
             for wav_sample in input_wav.samples::<f32>() {
                 let sample = wav_sample.unwrap();
-                let sample = f32::to_sample(sample);
+                let mut sample: f32 = f32::to_sample(sample);
+                sample = sample.mul_amp(0.25);
                 input_wav_f32.push(sample);
             }
         },
@@ -357,15 +358,3 @@ where
 
     Ok(())
 }
-
-// fn write_data<T>(output: &mut [T], channels: usize, next_sample: &mut dyn FnMut() -> f32)
-// where
-//     T: Sample + FromSample<f32>,
-// {
-//     for frame in output.chunks_mut(channels) {
-//         let value: T = T::from_sample(next_sample());
-//         for sample in frame.iter_mut() {
-//             *sample = value;
-//         }
-//     }
-// }
