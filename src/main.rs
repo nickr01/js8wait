@@ -2,6 +2,8 @@
 
 // change hound -> cpal
 
+use std::f32;
+
 // needed for traits
 use chrono::Timelike;
 use clap::Parser;
@@ -64,8 +66,6 @@ fn main() {
     let out_config = out_device.default_output_config().unwrap();
     println!("Default out config: {out_config:?}");
 
-    let out_spec = wav_spec_from_config(&out_config);
-
     // 2 Read the input file and establish the modulus
     let mut input_wav = if let Some(input_file) = opt.input_file {
         hound::WavReader::open(input_file).unwrap()
@@ -73,7 +73,7 @@ fn main() {
         hound::WavReader::open("test.wav").unwrap()
     };
 
-    let out_samples = convert_from(&mut input_wav, &out_config.clone().into());
+    let out_samples = samples_from_wav(&mut input_wav, &out_config.clone().into());
 
     let modulus_secs = get_modulus(opt.speed);
     println!("Modulus secs: {}", modulus_secs);
@@ -161,7 +161,7 @@ fn main() {
 
     if sleep_millis > 0 {
         let sleep_duration = std::time::Duration::from_millis(sleep_millis.into());
-        std::thread::sleep(sleep_duration);
+        // std::thread::sleep(sleep_duration);
     };
 
     // 4 Play
@@ -186,22 +186,22 @@ fn main() {
     println!("Done");
 }
 
-fn wav_sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
-    if format.is_float() {
-        hound::SampleFormat::Float
-    } else {
-        hound::SampleFormat::Int
-    }
-}
+// fn wav_sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
+//     if format.is_float() {
+//         hound::SampleFormat::Float
+//     } else {
+//         hound::SampleFormat::Int
+//     }
+// }
 
-fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> hound::WavSpec {
-    hound::WavSpec {
-        channels: config.channels() as _,
-        sample_rate: config.sample_rate() as _,
-        bits_per_sample: (config.sample_format().sample_size() * 8) as _,
-        sample_format: wav_sample_format(config.sample_format()),
-    }
-}
+// fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> hound::WavSpec {
+//     hound::WavSpec {
+//         channels: config.channels() as _,
+//         sample_rate: config.sample_rate() as _,
+//         bits_per_sample: (config.sample_format().sample_size() * 8) as _,
+//         sample_format: wav_sample_format(config.sample_format()),
+//     }
+// }
 
 fn convert_sample_rate(data: &Vec<f32>, input_sample_rate: u32, out_sample_rate: u32, channels: u16) -> Vec<f32> {
     samplerate::convert(
@@ -216,9 +216,10 @@ fn convert_sample_rate(data: &Vec<f32>, input_sample_rate: u32, out_sample_rate:
 
 fn convert_channels(in_samples: &Vec<f32>, in_channels: usize, out_channels: usize) -> Vec<f32> {
     if in_channels == out_channels {
+        println!("Preserving channel count");
         in_samples.clone()
     } else if in_channels == 1 {
-        // 1 -> 2 - clone left
+        // 1 -> 2 - duplicate the left channel
         println!("Dupe to stereo");
         let mut new_samples : Vec<f32> = Vec::new();
         for sample in in_samples.iter() {
@@ -254,31 +255,57 @@ fn get_modulus(arg_speed: Speed) -> u32 {
     }
 }
 
-fn convert_from(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::File>>, out_config: &cpal::StreamConfig) -> Vec<f32> 
+// the generic type is the input format -> f32
+fn samples_from_wav(input_wav: &mut hound::WavReader<std::io::BufReader<std::fs::File>>, out_config: &cpal::StreamConfig) -> Vec<f32>
 {
+    let input_len = input_wav.len();
+    println!("input_samples: {}", input_len);
+
+    let input_frames = input_wav.duration();
+    println!("input_frames: {}", input_frames);
+
     let input_spec = input_wav.spec();
     println!("in_spec: {:?}", input_spec);
 
+    let input_seconds = input_frames/input_spec.sample_rate;
+    println!("input_seconds: {}", input_seconds);
+
     // convert sample format to f32 before rate convert
     let mut input_wav_f32: Vec<f32> = Vec::new();
-    for sample in input_wav.samples::<i16>() {
-        input_wav_f32.push(f32::from_sample::<i16>(sample.unwrap()));
+
+    match input_spec.sample_format {
+        hound::SampleFormat::Float => {
+            // f -> f32
+            for wav_sample in input_wav.samples::<f32>() {
+                let sample = wav_sample.unwrap();
+                let sample = f32::to_sample(sample);
+                input_wav_f32.push(sample);
+            }
+        },
+        hound::SampleFormat::Int => {
+            // i to f32
+            for wav_sample in input_wav.samples::<i32>() {
+                let sample = wav_sample.unwrap();
+                let mut sample: f32 = i32::to_sample(sample);
+                sample = sample.mul_amp(32000.0);
+                input_wav_f32.push(sample);
+            }
+        }
     }
 
-    // sample rate convert
     let input_wav_f32_resampled = convert_sample_rate(
         &input_wav_f32, input_spec.sample_rate, out_config.sample_rate, 
         input_spec.channels
     );
 
-    // channel convert
     convert_channels(
-        & input_wav_f32_resampled, 
+        &input_wav_f32_resampled, 
         input_spec.channels as usize, 
         out_config.channels as usize
     )
 }
 
+// T is the output sample
 fn run<T>(out_samples: Vec<f32>, device: &cpal::Device, out_config: cpal::StreamConfig) -> Result<(), anyhow::Error>
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
@@ -287,22 +314,24 @@ where
     let out_sample_count = out_sample_iter.len();
     println!("Out_sample_count: {:?}", out_sample_count);
 
+    let out_frame_count = out_sample_count / out_config.channels as usize;
+    println!("out_frames {}", out_frame_count);
+
     let out_sample_rate = out_config.sample_rate as f32;
+    println!("out_sample_rate: {}", out_sample_rate);
 
     let out_data_fn = move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
         let mut input_fell_behind = false;
         for frame in data.chunks_mut(out_config.channels as usize) {
-            let signal_value = match out_sample_iter.next() {
-                Some(s) => s,
-                None => {
-                    input_fell_behind = true;
-                    0.0
-                }
-            };
-            // this was sample format conversion step
-            // let out_value = f32::from_sample::<T>(signal_value);
             for sample in frame.iter_mut() {
-                *sample = signal_value.to_sample::<T>();
+                let signal_value = match out_sample_iter.next() {
+                    Some(s) => s,
+                    None => {
+                        input_fell_behind = true;
+                        0.0
+                    }
+                };
+                *sample = T::from_sample(signal_value);
             }
         }
         if input_fell_behind {
@@ -312,6 +341,7 @@ where
 
     let err_fn = |err| eprintln!("an error occurred on stream: {err}");
 
+    // config gets set here!
     let stream = device.build_output_stream(
         &out_config,
         out_data_fn,
@@ -320,9 +350,22 @@ where
     )?;
     stream.play()?;
 
-    let play_time:f32 = out_sample_count as f32/(out_sample_rate * out_config.channels as f32) * 2.0; // TEMP FUDGE as output is half speed
+    let play_time:f32 = out_frame_count as f32/out_sample_rate;
+
     println!("Duration {} secs", play_time);
     std::thread::sleep(std::time::Duration::from_millis(1000 * play_time as u64));
 
     Ok(())
 }
+
+// fn write_data<T>(output: &mut [T], channels: usize, next_sample: &mut dyn FnMut() -> f32)
+// where
+//     T: Sample + FromSample<f32>,
+// {
+//     for frame in output.chunks_mut(channels) {
+//         let value: T = T::from_sample(next_sample());
+//         for sample in frame.iter_mut() {
+//             *sample = value;
+//         }
+//     }
+// }
